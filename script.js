@@ -5,9 +5,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const root = document.documentElement;
     const body = document.body;
 
-    /* ------------------------------------------------------------
-       Intro loader -> reveal hero
-    ------------------------------------------------------------ */
     const loader = document.querySelector(".loader");
 
     function startSite() {
@@ -20,12 +17,10 @@ document.addEventListener("DOMContentLoaded", () => {
         startSite();
     } else {
         window.addEventListener("load", () => setTimeout(startSite, 1250));
-        setTimeout(startSite, 3500); // safety net if an image is slow
+        setTimeout(startSite, 3500); 
     }
 
-    /* ------------------------------------------------------------
-       Shared mouse state
-    ------------------------------------------------------------ */
+
     const mouse = { x: -9999, y: -9999, active: false };
 
     window.addEventListener("pointermove", e => {
@@ -36,75 +31,57 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.addEventListener("mouseleave", () => { mouse.active = false; });
 
-    /* ------------------------------------------------------------
-       Animated background: living particle network + cursor trail
-    ------------------------------------------------------------ */
+
     const canvas = document.getElementById("bg");
-    const ctx = canvas.getContext("2d");
-    let W = 0, H = 0, DPR = 1;
+    const ctx = canvas.getContext("2d", { alpha: true });
+    let W = 0, H = 0;
     let particles = [];
-    let trail = [];
     let shocks = [];
     let running = true;
 
     function resize() {
-        DPR = Math.min(window.devicePixelRatio || 1, 2);
         W = window.innerWidth;
         H = window.innerHeight;
-        canvas.width = W * DPR;
-        canvas.height = H * DPR;
-        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+        canvas.width = W;
+        canvas.height = H;           
 
-        const count = Math.min(Math.floor((W * H) / 15000), 110);
+        const count = Math.min(Math.floor((W * H) / 30000), 52);
         particles = Array.from({ length: count }, () => ({
             x: Math.random() * W,
             y: Math.random() * H,
-            vx: (Math.random() - .5) * .35,
-            vy: (Math.random() - .5) * .35,
-            r: Math.random() * 1.6 + .6,
-            hue: Math.random() < .2 ? "143,134,255" : "45,167,255"
+            vx: (Math.random() - .5) * .4,
+            vy: (Math.random() - .5) * .4,
+            r: Math.random() * 1.4 + .8
         }));
     }
 
     resize();
-    window.addEventListener("resize", resize);
+    let resizeTimer;
+    window.addEventListener("resize", () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(resize, 150);
+    });
 
     document.addEventListener("visibilitychange", () => {
         running = !document.hidden;
-        if (running) requestAnimationFrame(draw);
     });
 
     window.addEventListener("pointerdown", e => {
         shocks.push({ x: e.clientX, y: e.clientY, r: 0 });
     });
 
-    const LINK = 135;
-    const MOUSE_LINK = 190;
+    const LINK = 125, LINK2 = LINK * LINK;
+    const MOUSE_LINK = 180;
 
-    function draw() {
-        if (!running) return;
-
+    function drawBackground() {
         ctx.clearRect(0, 0, W, H);
 
-        // trail
-        if (mouse.active && finePointer) {
-            trail.push({ x: mouse.x, y: mouse.y, life: 1 });
-        }
-        trail = trail.filter(t => (t.life -= .035) > 0);
-        for (const t of trail) {
-            ctx.beginPath();
-            ctx.arc(t.x, t.y, 2 + t.life * 6, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(45,167,255,${t.life * .18})`;
-            ctx.fill();
-        }
-
-        // shockwaves from clicks
-        shocks = shocks.filter(s => s.r < 320);
+        shocks = shocks.filter(s => s.r < 300);
         for (const s of shocks) {
-            s.r += 9;
+            s.r += 10;
             ctx.beginPath();
-            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(45,167,255,${(1 - s.r / 320) * .35})`;
+            ctx.arc(s.x, s.y, s.r, 0, 6.2832);
+            ctx.strokeStyle = "rgba(45,167,255," + ((1 - s.r / 300) * .35).toFixed(2) + ")";
             ctx.lineWidth = 2;
             ctx.stroke();
         }
@@ -112,119 +89,104 @@ document.addEventListener("DOMContentLoaded", () => {
         for (let i = 0; i < particles.length; i++) {
             const p = particles[i];
 
-            // pull gently toward the cursor
             if (mouse.active) {
-                const dx = mouse.x - p.x;
-                const dy = mouse.y - p.y;
-                const d = Math.hypot(dx, dy);
-                if (d < 220 && d > 1) {
-                    p.vx += (dx / d) * .012;
-                    p.vy += (dy / d) * .012;
+                const dx = mouse.x - p.x, dy = mouse.y - p.y;
+                const d2 = dx * dx + dy * dy;
+                if (d2 < 48400 && d2 > 1) {          // 220px
+                    const d = Math.sqrt(d2);
+                    p.vx += (dx / d) * .015;
+                    p.vy += (dy / d) * .015;
                 }
             }
 
-            // push away from click shockwaves
-            for (const s of shocks) {
-                const dx = p.x - s.x;
-                const dy = p.y - s.y;
-                const d = Math.hypot(dx, dy);
+            for (let k = 0; k < shocks.length; k++) {
+                const s = shocks[k];
+                const dx = p.x - s.x, dy = p.y - s.y;
+                const d = Math.sqrt(dx * dx + dy * dy);
                 if (Math.abs(d - s.r) < 40 && d > 1) {
                     p.vx += (dx / d) * .9;
                     p.vy += (dy / d) * .9;
                 }
             }
 
-            // friction + speed limit
             p.vx *= .985;
             p.vy *= .985;
-            const sp = Math.hypot(p.vx, p.vy);
-            if (sp < .12) {
-                p.vx += (Math.random() - .5) * .02;
-                p.vy += (Math.random() - .5) * .02;
+            if (Math.abs(p.vx) + Math.abs(p.vy) < .15) {
+                p.vx += (Math.random() - .5) * .03;
+                p.vy += (Math.random() - .5) * .03;
             }
-            if (sp > 2.4) {
-                p.vx = (p.vx / sp) * 2.4;
-                p.vy = (p.vy / sp) * 2.4;
-            }
+            const m = 2.2;
+            if (p.vx > m) p.vx = m; else if (p.vx < -m) p.vx = -m;
+            if (p.vy > m) p.vy = m; else if (p.vy < -m) p.vy = -m;
 
             p.x += p.vx;
             p.y += p.vy;
 
-            if (p.x < -20) p.x = W + 20;
-            if (p.x > W + 20) p.x = -20;
-            if (p.y < -20) p.y = H + 20;
-            if (p.y > H + 20) p.y = -20;
+            if (p.x < -20) p.x = W + 20; else if (p.x > W + 20) p.x = -20;
+            if (p.y < -20) p.y = H + 20; else if (p.y > H + 20) p.y = -20;
+        }
 
-            // node
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(${p.hue},.85)`;
-            ctx.fill();
+        ctx.fillStyle = "rgba(80,180,255,.85)";
+        ctx.beginPath();
+        for (let i = 0; i < particles.length; i++) {
+            const p = particles[i];
+            ctx.moveTo(p.x + p.r, p.y);
+            ctx.arc(p.x, p.y, p.r, 0, 6.2832);
+        }
+        ctx.fill();
 
-            // links to neighbours
+        ctx.lineWidth = 1;
+        const buckets = [[], [], []];
+        for (let i = 0; i < particles.length; i++) {
+            const p = particles[i];
             for (let j = i + 1; j < particles.length; j++) {
                 const q = particles[j];
                 const dx = p.x - q.x;
+                if (dx > LINK || dx < -LINK) continue;
                 const dy = p.y - q.y;
                 const d2 = dx * dx + dy * dy;
-                if (d2 < LINK * LINK) {
-                    const a = (1 - Math.sqrt(d2) / LINK) * .28;
-                    ctx.strokeStyle = `rgba(${p.hue},${a})`;
-                    ctx.lineWidth = .8;
-                    ctx.beginPath();
-                    ctx.moveTo(p.x, p.y);
-                    ctx.lineTo(q.x, q.y);
-                    ctx.stroke();
-                }
-            }
-
-            // links to the cursor
-            if (mouse.active) {
-                const dx = p.x - mouse.x;
-                const dy = p.y - mouse.y;
-                const d = Math.hypot(dx, dy);
-                if (d < MOUSE_LINK) {
-                    ctx.strokeStyle = `rgba(120,200,255,${(1 - d / MOUSE_LINK) * .6})`;
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.moveTo(p.x, p.y);
-                    ctx.lineTo(mouse.x, mouse.y);
-                    ctx.stroke();
+                if (d2 < LINK2) {
+                    buckets[d2 < LINK2 * .25 ? 0 : d2 < LINK2 * .6 ? 1 : 2].push(p.x, p.y, q.x, q.y);
                 }
             }
         }
+        const alphas = [.32, .2, .09];
+        for (let b = 0; b < 3; b++) {
+            const arr = buckets[b];
+            if (!arr.length) continue;
+            ctx.strokeStyle = "rgba(45,167,255," + alphas[b] + ")";
+            ctx.beginPath();
+            for (let k = 0; k < arr.length; k += 4) {
+                ctx.moveTo(arr[k], arr[k + 1]);
+                ctx.lineTo(arr[k + 2], arr[k + 3]);
+            }
+            ctx.stroke();
+        }
 
-        if (!reduceMotion) requestAnimationFrame(draw);
+        if (mouse.active) {
+            ctx.strokeStyle = "rgba(120,200,255,.35)";
+            ctx.beginPath();
+            for (let i = 0; i < particles.length; i++) {
+                const p = particles[i];
+                const dx = p.x - mouse.x, dy = p.y - mouse.y;
+                if (dx * dx + dy * dy < MOUSE_LINK * MOUSE_LINK) {
+                    ctx.moveTo(p.x, p.y);
+                    ctx.lineTo(mouse.x, mouse.y);
+                }
+            }
+            ctx.stroke();
+        }
     }
 
-    draw(); // with reduced motion this paints a single still frame
+    
+    const useCursor = finePointer && !reduceMotion;
+    const ring = document.querySelector(".cursor-ring");
+    const ringLabel = ring.querySelector("span");
+    const glow = document.querySelector(".cursor-glow");
+    let rx = -100, ry = -100, gx = -100, gy = -100;
 
-    /* ------------------------------------------------------------
-       Custom cursor (dot + lagging ring + page-wide glow)
-    ------------------------------------------------------------ */
-    if (finePointer && !reduceMotion) {
+    if (useCursor) {
         root.classList.add("has-cursor");
-
-        const dot = document.querySelector(".cursor-dot");
-        const ring = document.querySelector(".cursor-ring");
-        const ringLabel = ring.querySelector("span");
-        const glow = document.querySelector(".cursor-glow");
-
-        let rx = -100, ry = -100, gx = -100, gy = -100;
-
-        (function loop() {
-            dot.style.transform = `translate3d(${mouse.x}px, ${mouse.y}px, 0)`;
-
-            rx += (mouse.x - rx) * .18;
-            ry += (mouse.y - ry) * .18;
-            ring.style.transform = `translate3d(${rx}px, ${ry}px, 0)`;
-
-            gx += (mouse.x - gx) * .07;
-            gy += (mouse.y - gy) * .07;
-            glow.style.transform = `translate3d(${gx}px, ${gy}px, 0)`;
-
-            requestAnimationFrame(loop);
-        })();
 
         window.addEventListener("pointermove", () => glow.classList.add("on"), { once: true });
 
@@ -260,9 +222,24 @@ document.addEventListener("DOMContentLoaded", () => {
         document.addEventListener("pointerup", () => ring.classList.remove("down"));
     }
 
-    /* ------------------------------------------------------------
-       Card spotlight + 3D tilt
-    ------------------------------------------------------------ */
+    let frame = 0;
+    function tick() {
+        if (running) {
+            if (useCursor) {
+                rx += (mouse.x - rx) * .3;
+                ry += (mouse.y - ry) * .3;
+                ring.style.transform = "translate3d(" + rx + "px," + ry + "px,0)";
+                gx += (mouse.x - gx) * .12;
+                gy += (mouse.y - gy) * .12;
+                glow.style.transform = "translate3d(" + gx + "px," + gy + "px,0)";
+            }
+            drawBackground();
+        }
+        if (!reduceMotion) requestAnimationFrame(tick);
+    }
+    tick();
+
+    
     document.querySelectorAll(".card").forEach(card => {
         card.addEventListener("pointermove", e => {
             const rect = card.getBoundingClientRect();
@@ -275,11 +252,14 @@ document.addEventListener("DOMContentLoaded", () => {
         document.querySelectorAll("[data-tilt]").forEach(el => {
             const max = parseFloat(el.dataset.tilt) || 6;
 
+            el.addEventListener("pointerenter", () => {
+                el.style.transition = "transform .12s linear, border-color .4s, box-shadow .4s";
+            });
+
             el.addEventListener("pointermove", e => {
                 const rect = el.getBoundingClientRect();
                 const px = (e.clientX - rect.left) / rect.width - .5;
                 const py = (e.clientY - rect.top) / rect.height - .5;
-                el.style.transition = "transform .1s linear, border-color .4s, box-shadow .4s";
                 el.style.transform =
                     `perspective(1000px) rotateX(${(-py * max).toFixed(2)}deg) rotateY(${(px * max).toFixed(2)}deg) translateZ(0)`;
             });
@@ -290,7 +270,6 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         });
 
-        /* magnetic buttons */
         document.querySelectorAll("[data-magnetic]").forEach(el => {
             el.addEventListener("pointermove", e => {
                 const rect = el.getBoundingClientRect();
@@ -303,10 +282,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         });
     }
-
-    /* ------------------------------------------------------------
-       Hero emblem parallax (mouse) + scroll
-    ------------------------------------------------------------ */
+    
     const hero = document.querySelector(".hero");
     const emblem = document.querySelector(".emblem");
 
@@ -317,9 +293,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    /* ------------------------------------------------------------
-       Mobile menu
-    ------------------------------------------------------------ */
+
     const menu = document.querySelector(".menu");
     const links = document.querySelector(".links");
     const nav = document.querySelector(".nav");
@@ -338,9 +312,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    /* ------------------------------------------------------------
-       Contact form (same Formspree behaviour as before)
-    ------------------------------------------------------------ */
+
     document.querySelectorAll(".form").forEach(form => {
         form.addEventListener("submit", async e => {
             e.preventDefault();
@@ -375,9 +347,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    /* ------------------------------------------------------------
-       Scroll reveal
-    ------------------------------------------------------------ */
+   
     const revealElements = document.querySelectorAll(`
         .about,
         #services .head,
@@ -405,16 +375,12 @@ document.addEventListener("DOMContentLoaded", () => {
             const el = entry.target;
             el.classList.add("show");
             observer.unobserve(el);
-            // drop the stagger delay afterwards so tilt/hover stay snappy
             setTimeout(() => { el.style.transitionDelay = ""; }, 1400);
         });
     }, { threshold: .12, rootMargin: "0px 0px -40px 0px" });
 
     revealElements.forEach(el => revealObserver.observe(el));
 
-    /* ------------------------------------------------------------
-       Nav: scrolled state, progress bar, active link + sliding pill
-    ------------------------------------------------------------ */
     const progress = document.createElement("div");
     progress.className = "scroll-progress";
     document.body.appendChild(progress);
@@ -459,7 +425,6 @@ document.addEventListener("DOMContentLoaded", () => {
     window.addEventListener("load", movePill);
     if (document.fonts?.ready) document.fonts.ready.then(movePill);
 
-    /* hover preview for the pill */
     if (finePointer) {
         navLinks.forEach(link => {
             link.addEventListener("pointerenter", () => {
@@ -470,9 +435,7 @@ document.addEventListener("DOMContentLoaded", () => {
         links?.addEventListener("pointerleave", movePill);
     }
 
-    /* ------------------------------------------------------------
-       Smooth anchor scrolling (+ ignore empty project link)
-    ------------------------------------------------------------ */
+
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         anchor.addEventListener("click", function (e) {
             const targetId = this.getAttribute("href");
@@ -495,7 +458,6 @@ document.addEventListener("DOMContentLoaded", () => {
             window.scrollTo({ top: 0, behavior: "smooth" });
         });
 
-    // project card with no link yet: don't reload the page
     document.querySelectorAll('.projects a[href=""]').forEach(a => {
         a.addEventListener("click", e => e.preventDefault());
     });
